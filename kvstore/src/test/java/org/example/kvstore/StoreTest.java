@@ -12,14 +12,14 @@ public class StoreTest {
         Store<Integer, Integer> store = manager.newStore();
 
         assert store.get(1) == null;
-
+        System.out.println("Past the first assert");
         store.put(42, 1);
         assert store.get(42).equals(1);
 
         assert store.put(42, 2).equals(1);
 
     }
-
+    
     @Test
     public void multipleStores(){
         int NCALLS = 1000;
@@ -37,5 +37,6 @@ public class StoreTest {
             assert rand.nextBoolean() ? store2.get(k).equals(v) : store3.get(k).equals(v);
         }
     }
+    
 
 }

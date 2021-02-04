@@ -8,13 +8,15 @@ import java.util.Map;
 import java.util.List;
 import java.util.TreeSet;
 
-public class ConsistentHash implements Strategy{
+import java.io.Serializable;
+
+
+public class ConsistentHash implements Serializable,Strategy{
 
     private TreeSet<Integer> ring;
     private Map<Integer,Address> addresses;
 
-    public ConsistentHash(View view){
-      List<Address> members = view.getMembers();
+    public ConsistentHash(List<Address> members){
       ring = new TreeSet<Integer>();
       addresses = new HashMap<Integer, Address>();
       for(Address member:members) //build the ring

@@ -13,6 +13,8 @@ import org.jgroups.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -45,18 +47,51 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
     }
 
     public void end(){
-      channel.close();
+      // change strategy and send data to the new recipient
+      List<Address> members = new ArrayList<Address>(channel.getView().getMembers());
+      if (members.size() >1)
+      {
+        members.remove(channel.getAddress());
+        strategy = new ConsistentHash(members);
+        // send it to the appropriate member
+        Address dest = strategy.lookup(channel.getAddress());
+        Message msg = new Message(dest, null, strategy);
+        try{
+          channel.send(msg);
+        }
+        catch(Exception e)
+        {
+          e.printStackTrace();
+          channel.close();
+        }
+        ScheduledExecutorService oneThreadScheduleExecutor = Executors.newScheduledThreadPool(1);
+        oneThreadScheduleExecutor.schedule(migrateDataRunnable, 1, TimeUnit.SECONDS);
+      }
+      ScheduledExecutorService oneThreadScheduleExecutor = Executors.newScheduledThreadPool(1);
+      oneThreadScheduleExecutor.schedule(closeChannelRunnable, 2, TimeUnit.SECONDS);
+
     }
+
+    Runnable closeChannelRunnable = new Runnable()
+    {
+      public void run(){
+        channel.close();
+      }
+    };
 
     @Override
     public void viewAccepted(View new_view)
     {
       ScheduledExecutorService oneThreadScheduleExecutor = Executors.newScheduledThreadPool(1);
 
-      strategy = new ConsistentHash(new_view);
+      strategy = new ConsistentHash(new_view.getMembers());
       System.out.println("New view : "+new_view.getMembers().size());
+
+      if(new_view.getMembers().size() >1){
       
-      oneThreadScheduleExecutor.schedule(migrateDataRunnable, 1, TimeUnit.SECONDS);    
+        oneThreadScheduleExecutor.schedule(migrateDataRunnable, 1, TimeUnit.SECONDS);   
+      }
+       
     }
 
     Runnable migrateDataRunnable = new Runnable()
@@ -129,15 +164,25 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
     @Override
     public void receive(Message msg)
     {
-      Command<K,V> cmd = (Command<K,V>) msg.getObject();
-      try{
-        workers.submit(new CmdHandler(msg.getSrc(), cmd));
-      }
-      catch(Exception e)
+      if (msg.getObject() instanceof Command<?,?>)
       {
-        e.printStackTrace();
-        channel.close();
+        try{
+          workers.submit(new CmdHandler(msg.getSrc(), (Command<K,V>) msg.getObject()));
+        }
+        catch(Exception e)
+        {
+          e.printStackTrace();
+          channel.close();
+        }
       }
+      else if (msg.getObject() instanceof Strategy)
+      {
+        strategy = (Strategy) msg.getObject();
+      }
+      else{
+        System.out.println("Unsupported message type !");
+      }
+
     }
 
     private class CmdHandler implements Callable<Void>

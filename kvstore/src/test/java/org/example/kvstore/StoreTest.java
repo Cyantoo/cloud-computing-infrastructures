@@ -5,7 +5,7 @@ import org.junit.Test;
 import java.util.Random;
 
 public class StoreTest {
-    /*
+    
     @Test
     public void baseOperations() {
         System.out.println("Single Store test");
@@ -19,6 +19,7 @@ public class StoreTest {
 
         assert store.put(42, 2).equals(1);
         store.end();
+        SafeSleep(2000);
     }
     
     @Test
@@ -39,11 +40,14 @@ public class StoreTest {
             assert rand.nextBoolean() ? store2.get(k).equals(v) : store3.get(k).equals(v);
         }
         store1.end();
+        SafeSleep(2000);
         store2.end();
+        SafeSleep(2000);
         store3.end();
+        SafeSleep(2000);
 
     }
-    */
+    
     
     @Test
     public void dataMigration(){
@@ -63,15 +67,10 @@ public class StoreTest {
         }
 
         Store<Integer, Integer> store2 = manager.newStore();
-        Store<Integer, Integer> store3 = manager.newStore();
+        SafeSleep(2000);
 
-        try{
-            Thread.sleep(1000); // needed to give time to finish migration
-        }
-        catch(Exception e)
-        {
-            e.printStackTrace();
-        }
+        Store<Integer, Integer> store3 = manager.newStore();
+        SafeSleep(2000);
 
         for (int i = 0; i < N/2; i++) {
             assert rand.nextBoolean() ? store2.get(testKeys[i]).equals(testValues[i]) : store3.get(testKeys[i]).equals(testValues[i]);
@@ -80,17 +79,31 @@ public class StoreTest {
         for (int i = N/2; i < N; i++) {
             store3.put(testKeys[i], testValues[i]);
         }
-        //store3.end();
+
+        store3.end();
+        SafeSleep(2000);
+
 
         for (int i = 0; i < N; i++) {
             assert rand.nextBoolean() ? store2.get(testKeys[i]).equals(testValues[i]) : store1.get(testKeys[i]).equals(testValues[i]);
         }
 
         store1.end();
+        SafeSleep(2000);
+
         store2.end();
-        store3.end();
 
     }
+
+    void SafeSleep(int timeMilliS){
+        try{
+            Thread.sleep(timeMilliS); // this is to ensure there is no client access during migration
+        }
+        catch(Exception e)
+        {
+            e.printStackTrace();
+    }
+}
     
     
     

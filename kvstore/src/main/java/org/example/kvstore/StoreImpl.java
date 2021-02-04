@@ -47,14 +47,7 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
           pending.complete(value);
         }
         else{
-          if(commandToExecute instanceof Put)
-          {
-            value = data.put(key, value);
-          }
-          else if(commandToExecute instanceof Get)
-          {
-            value = data.get(key);
-          }
+          value = execute(commandToExecute);
           Reply<K,V> reply = factory.newReplyCmd(key, value);
           send(caller, reply);
         }
@@ -72,6 +65,7 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
       channel.setReceiver(this);
       channel.connect("KeyValueStore");
       workers = Executors.newCachedThreadPool();
+      factory = new CommandFactory<K,V>();
     }
 
     @Override
@@ -83,7 +77,7 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
     synchronized V execute(Command<K,V> cmd){
       K k = cmd.getKey();
       Address addr = strategy.lookup(k);
-      if(addr == channel.getAddress())
+      if(addr.equals(channel.getAddress()))
       {
         if(cmd instanceof Get)
           return data.get(k);
@@ -135,7 +129,13 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
     public void receive(Message msg)
     {
       Command<K,V> cmd = (Command<K,V>) msg.getObject();
-      workers.submit(new CmdHandler(msg.getSrc(), cmd));
+      try{
+        workers.submit(new CmdHandler(msg.getSrc(), cmd));
+      }
+      catch(Exception e)
+      {
+        e.printStackTrace();
+      }
     }
 
 }

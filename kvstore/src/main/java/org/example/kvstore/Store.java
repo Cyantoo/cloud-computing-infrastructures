@@ -6,4 +6,6 @@ public interface Store<K,V> {
 
     V put(K k, V v);
 
+    void end();
+
 }

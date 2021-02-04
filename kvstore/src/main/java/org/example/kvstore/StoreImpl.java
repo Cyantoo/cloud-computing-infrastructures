@@ -1,5 +1,6 @@
 package org.example.kvstore;
 
+import org.eclipse.jetty.util.thread.ScheduledExecutorScheduler;
 import org.example.kvstore.cmd.Command;
 import org.example.kvstore.cmd.CommandFactory;
 import org.example.kvstore.cmd.Get;
@@ -16,6 +17,8 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
 
@@ -27,52 +30,48 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
     private ExecutorService workers;
     private CompletableFuture<V> pending;
 
-
-    private class CmdHandler implements Callable<Void>
-    {
-      Address caller;
-      Command<K,V> commandToExecute;
-      public CmdHandler(Address caller, Command<K,V> commandToExecute)
-      {
-        this.caller = caller;
-        this.commandToExecute = commandToExecute;
-      }
-
-      public Void call()
-      {
-        K key = commandToExecute.getKey();
-        V value = commandToExecute.getValue();
-        if(commandToExecute instanceof Reply)
-        {
-          pending.complete(value);
-        }
-        else{
-          value = execute(commandToExecute);
-          Reply<K,V> reply = factory.newReplyCmd(key, value);
-          send(caller, reply);
-        }
-        return null;
-      }
-    }
-
     public StoreImpl(String name) {
         this.name = name;
         data = new HashMap<K,V>();
     }
 
     public void init() throws Exception{ // may be stuff to do here
+      workers = Executors.newCachedThreadPool();
+      factory = new CommandFactory<K,V>();
       channel = new JChannel();
       channel.setReceiver(this);
       channel.connect("KeyValueStore");
-      workers = Executors.newCachedThreadPool();
-      factory = new CommandFactory<K,V>();
+
+    }
+
+    public void end(){
+      channel.close();
     }
 
     @Override
     public void viewAccepted(View new_view)
     {
+      ScheduledExecutorService oneThreadScheduleExecutor = Executors.newScheduledThreadPool(1);
+
       strategy = new ConsistentHash(new_view);
+      System.out.println("New view : "+new_view.getMembers().size());
+      
+      oneThreadScheduleExecutor.schedule(migrateDataRunnable, 1, TimeUnit.SECONDS);    
     }
+
+    Runnable migrateDataRunnable = new Runnable()
+    {
+      public void run(){
+        System.out.println("Starting migration at "+channel.getAddressAsString());
+        Map<K,V> old_data = new HashMap<K,V>(data);
+        data =  new HashMap<K,V>();
+        old_data.forEach(
+          (K k,V v) -> put(k, v)
+          );
+        System.out.println("Finished migration at "+channel.getAddressAsString());
+      }
+      
+    };
 
     synchronized V execute(Command<K,V> cmd){
       K k = cmd.getKey();
@@ -93,6 +92,7 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
           }
           catch(Exception e){
             e.printStackTrace();
+            channel.close();
             return null;
           }
       }
@@ -122,6 +122,7 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
       catch(Exception e)
       {
         e.printStackTrace();
+        channel.close();
       }
     }
 
@@ -135,6 +136,34 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
       catch(Exception e)
       {
         e.printStackTrace();
+        channel.close();
+      }
+    }
+
+    private class CmdHandler implements Callable<Void>
+    {
+      Address caller;
+      Command<K,V> commandToExecute;
+      public CmdHandler(Address caller, Command<K,V> commandToExecute)
+      {
+        this.caller = caller;
+        this.commandToExecute = commandToExecute;
+      }
+
+      public Void call()
+      {
+        K key = commandToExecute.getKey();
+        V value = commandToExecute.getValue();
+        if(commandToExecute instanceof Reply)
+        {
+          pending.complete(value);
+        }
+        else{
+          value = execute(commandToExecute);
+          Reply<K,V> reply = factory.newReplyCmd(key, value);
+          send(caller, reply);
+        }
+        return null;
       }
     }
 

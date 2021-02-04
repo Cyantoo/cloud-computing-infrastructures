@@ -80,17 +80,19 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
       strategy = new ConsistentHash(new_view);
     }
 
-    // On ne doit pas créer de pending si elle n'est pas complétée avant
-    @Override
-    public V get(K k) {
+    synchronized V execute(Command<K,V> cmd){
+      K k = cmd.getKey();
       Address addr = strategy.lookup(k);
       if(addr == channel.getAddress())
       {
-        return data.get(k);
+        if(cmd instanceof Get)
+          return data.get(k);
+        else
+          return data.put(k, cmd.getValue());
       }
       else{
         pending = new CompletableFuture<V>();
-        send(addr, factory.newGetCmd(k));
+        send(addr, cmd);
         try
           {
             return(pending.get());
@@ -103,22 +105,13 @@ public class StoreImpl<K,V> extends ReceiverAdapter implements Store<K,V> {
     }
 
     @Override
+    public V get(K k) {
+      return(execute(factory.newGetCmd(k)));
+    }
+
+    @Override
     public V put(K k, V v) {
-      Address addr = strategy.lookup(k);
-      if(addr == channel.getAddress())
-        return data.put(k, v);
-      else{
-          pending = new CompletableFuture<V>();
-          send(addr, factory.newPutCmd(k, v));
-          try
-          {
-            return(pending.get());
-          }
-          catch(Exception e){
-            e.printStackTrace();
-            return null;
-          }
-        }
+      return(execute(factory.newPutCmd(k, v)));
       }
 
     @Override

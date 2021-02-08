@@ -34,7 +34,6 @@ public class ConsistentHash implements Serializable,Strategy{
       else
       {
         return addresses.get(ring.first()); // cycle around the ring
-
       }
     }
 
